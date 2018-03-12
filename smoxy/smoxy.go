@@ -1,45 +1,51 @@
+// Package smoxy exports soxy.Client to go mobile
 package smoxy
 
 import (
 	"log"
+	"math"
 	"os"
 	"time"
 
 	socks5 "github.com/alxarch/go-socks5"
 	"github.com/alxarch/soxy"
-	"github.com/xtaci/smux"
+	"github.com/hashicorp/yamux"
 )
 
+// Options maps yamux.Config to go mobile compatible values
 type Options struct {
-	MaxReceiveBuffer  int
-	MaxFrameSize      int
-	KeepAliveInterval string
-	KeepAliveTimeout  string
-	Logging           bool
+	MaxStreamWindowSize    int
+	KeepAliveInterval      string
+	ConnectionWriteTimeout string
+	Logging                bool
 }
 
-func (options *Options) Config() *smux.Config {
-	config := smux.DefaultConfig()
+func (options *Options) config() *yamux.Config {
+	config := yamux.DefaultConfig()
 	if options == nil {
 		return config
 	}
-	if options.MaxReceiveBuffer > 0 {
-		config.MaxReceiveBuffer = options.MaxReceiveBuffer
+	if options.Logging {
+		config.LogOutput = os.Stderr
 	}
-	if options.MaxFrameSize > 0 {
-		config.MaxFrameSize = options.MaxFrameSize
+	// if options.MaxReceiveBuffer > 0 {
+	// 	config.MaxReceiveBuffer = options.MaxReceiveBuffer
+	// }
+	if options.MaxStreamWindowSize > 0 && options.MaxStreamWindowSize <= math.MaxUint32 {
+		config.MaxStreamWindowSize = uint32(options.MaxStreamWindowSize)
 	}
 	if d, err := time.ParseDuration(options.KeepAliveInterval); err != nil {
 		config.KeepAliveInterval = d
 	}
-	if d, err := time.ParseDuration(options.KeepAliveTimeout); err != nil {
-		config.KeepAliveTimeout = d
+	if d, err := time.ParseDuration(options.ConnectionWriteTimeout); err != nil {
+		config.ConnectionWriteTimeout = d
 	}
 	return config
 }
 
+// Dial is the go mobile interface
 func Dial(address string, options *Options) error {
-	config := options.Config()
+	config := options.config()
 	sconfig := new(socks5.Config)
 	var logger *log.Logger
 	if options != nil && options.Logging {

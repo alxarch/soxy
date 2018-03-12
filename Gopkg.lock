@@ -8,20 +8,14 @@
   revision = "42ba4a00279f3f9aa768109712a505f2022aae63"
 
 [[projects]]
-  name = "github.com/pkg/errors"
+  branch = "master"
+  name = "github.com/hashicorp/yamux"
   packages = ["."]
-  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
-  version = "v0.8.0"
-
-[[projects]]
-  name = "github.com/xtaci/smux"
-  packages = ["."]
-  revision = "e28719eede1ac5714cf0b06ba2f403125864ebe0"
-  version = "v1.0.7"
+  revision = "683f49123a33db61abfb241b7ac5e4af4dc54d55"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b4817b6d0c14420552ec2c81f987a635fb39ea2f918c05131b7613d7c09b28ac"
+  inputs-digest = "c55748d2ee662566cddc757fdf6939cd632b158a3b1645df55064c0152ecf6d9"
   solver-name = "gps-cdcl"
   solver-version = 1

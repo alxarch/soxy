@@ -6,21 +6,20 @@ import (
 	"net"
 
 	socks5 "github.com/alxarch/go-socks5"
-
-	"github.com/xtaci/smux"
+	"github.com/hashicorp/yamux"
 )
 
 // Client is a tunneling client to a socks server
 type Client struct {
-	config *smux.Config
+	config *yamux.Config
 	socks  *socks5.Server
 	logger *log.Logger
 }
 
 // NewClient creates a tunnel client to a socks server
-func NewClient(s *socks5.Server, config *smux.Config, logger *log.Logger) *Client {
+func NewClient(s *socks5.Server, config *yamux.Config, logger *log.Logger) *Client {
 	if config == nil {
-		config = smux.DefaultConfig()
+		config = yamux.DefaultConfig()
 	}
 	if logger == nil {
 		logger = log.New(ioutil.Discard, "[soxy]", log.LstdFlags)
@@ -37,22 +36,22 @@ func NewClient(s *socks5.Server, config *smux.Config, logger *log.Logger) *Clien
 func (c *Client) DialAndListen(address string) (err error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		log.Println("Failed to dial", address, err.Error())
+		c.logger.Println("Failed to dial", address, err.Error())
 		return
 	}
-	mux, err := smux.Server(conn, c.config)
+	mux, err := yamux.Server(conn, c.config)
 	if err != nil {
-		log.Println("Failed to open session", err.Error())
+		c.logger.Println("Failed to open session", err.Error())
 		return
 	}
 	for {
 		stream, err := mux.AcceptStream()
 		if err != nil {
-			log.Println("Failed to open stream", err.Error())
+			c.logger.Println("Failed to open stream", err.Error())
 			return err
 		}
-		log.Println("New stream", stream.ID())
-		go c.socks.ServeConn(stream)
 
+		c.logger.Println("New stream", stream.StreamID())
+		go c.socks.ServeConn(stream)
 	}
 }

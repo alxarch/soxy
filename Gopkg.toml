@@ -30,8 +30,8 @@
   name = "github.com/alxarch/go-socks5"
 
 [[constraint]]
-  name = "github.com/xtaci/smux"
-  version = "1.0.7"
+  branch = "master"
+  name = "github.com/hashicorp/yamux"
 
 [prune]
   go-tests = true

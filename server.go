@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hashicorp/yamux"
 )
@@ -62,11 +63,15 @@ func (t *Tunnel) MarshalJSON() ([]byte, error) {
 		RemoteAddress string `json:"remote_address"`
 		LocalAddress  string `json:"local_address"`
 		NumStreams    int    `json:"num_streams"`
+		SendBytes     int64  `json:"send_bytes"`
+		RecvBytes     int64  `json:"recv_bytes"`
 	}{
 		t.id,
 		t.conn.RemoteAddr().String(),
 		t.ln.Addr().String(),
 		t.mux.NumStreams(),
+		atomic.LoadInt64(&t.sendBytes),
+		atomic.LoadInt64(&t.recvBytes),
 	})
 }
 
@@ -98,6 +103,7 @@ func (t *Tunnel) Serve() error {
 	}
 }
 
+// HandleConn opens a stream ands pipes an incoming connection to it
 func (t *Tunnel) HandleConn(conn net.Conn) error {
 	defer conn.Close()
 	stream, err := t.mux.OpenStream()
@@ -106,20 +112,8 @@ func (t *Tunnel) HandleConn(conn net.Conn) error {
 	}
 	defer stream.Close()
 	sendErr, recvErr := make(chan error), make(chan error)
-	go func() {
-		_, err := pipe(conn, stream, t.bufferSize)
-		select {
-		case sendErr <- err:
-		default:
-		}
-	}()
-	go func() {
-		_, err := pipe(stream, conn, t.bufferSize)
-		select {
-		case recvErr <- err:
-		default:
-		}
-	}()
+	go pipe(conn, stream, t.bufferSize, &t.sendBytes, sendErr)
+	go pipe(stream, conn, t.bufferSize, &t.recvBytes, recvErr)
 	select {
 	case err = <-recvErr:
 	case err = <-sendErr:
@@ -234,9 +228,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 var bufPool = new(sync.Pool)
 
+const minBufferSize = 256
+
 func getBuffer(size int) []byte {
-	if size < 256 {
-		size = 256
+	if size < minBufferSize {
+		size = minBufferSize
 	}
 	if buffer, ok := bufPool.Get().([]byte); ok && cap(buffer) >= size {
 		return buffer[:size]
@@ -248,8 +244,69 @@ func putBuffer(buffer []byte) {
 	bufPool.Put(buffer)
 }
 
-func pipe(r io.Reader, w io.Writer, size int) (int64, error) {
-	buffer := getBuffer(size)
-	defer putBuffer(buffer)
-	return io.CopyBuffer(w, r, buffer)
+func pipe(src io.Reader, dst io.Writer, size int, written *int64, err chan<- error) {
+	buf := getBuffer(size)
+	defer putBuffer(buf)
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if nw > 0 {
+				atomic.AddInt64(written, int64(nw))
+			}
+			if ew != nil {
+				err <- ew
+				break
+			}
+			if nr != nw {
+				err <- io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err <- er
+			}
+			break
+		}
+	}
+	return
+}
+
+// TunnelOptions is the config for a Tunnel
+type TunnelOptions struct {
+	// PipeBufferSize sets the size of the send/recv buffers for piping
+	// tunnel connections to a stream
+	PipeBufferSize int
+	// Mux is the config for stream muxer
+	// KeepAliveInterval is how often to perform the keep alive
+	KeepAliveInterval time.Duration
+	// MaxStreamWindowSize is used to control the maximum
+	// window size that we allow for a stream.
+	MaxStreamWindowSize uint32
+	// AcceptBacklog is used to limit how many streams may be
+	// waiting an accept.
+	AcceptBacklog int
+	// WriteTimeout is meant to be a "safety valve" timeout after
+	// we which will suspect a problem with the underlying connection and
+	// close it. This is only applied to writes, where's there's generally
+	// an expectation that things will move along quickly.
+	WriteTimeout time.Duration
+}
+
+func (options *TunnelOptions) yamuxConfig() *yamux.Config {
+	config := yamux.DefaultConfig()
+	if options.WriteTimeout > 0 {
+		config.ConnectionWriteTimeout = options.WriteTimeout
+	}
+	if options.MaxStreamWindowSize > 0 {
+		config.MaxStreamWindowSize = options.MaxStreamWindowSize
+	}
+	if options.AcceptBacklog != 0 {
+		config.AcceptBacklog = options.AcceptBacklog
+	}
+	if options.KeepAliveInterval > 0 {
+		config.KeepAliveInterval = options.KeepAliveInterval
+	}
+	return config
 }

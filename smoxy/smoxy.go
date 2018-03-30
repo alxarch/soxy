@@ -31,7 +31,7 @@ func (options *Options) config() *yamux.Config {
 	// if options.MaxReceiveBuffer > 0 {
 	// 	config.MaxReceiveBuffer = options.MaxReceiveBuffer
 	// }
-	if options.MaxStreamWindowSize > 0 && options.MaxStreamWindowSize <= math.MaxUint32 {
+	if options.MaxStreamWindowSize > 0 && uint32(options.MaxStreamWindowSize) <= math.MaxUint32 {
 		config.MaxStreamWindowSize = uint32(options.MaxStreamWindowSize)
 	}
 	if d, err := time.ParseDuration(options.KeepAliveInterval); err != nil {
@@ -43,21 +43,19 @@ func (options *Options) config() *yamux.Config {
 	return config
 }
 
-// Dial is the go mobile interface
-func Dial(address string, options *Options) error {
+// DialSocks is the go mobile interface for setting up a socks reverse tunnel
+func DialSocks(address string, options *Options) error {
 	config := options.config()
-	sconfig := new(socks5.Config)
 	var logger *log.Logger
 	if options != nil && options.Logging {
 		logger = log.New(os.Stdout, "[soxy]", log.LstdFlags)
-		sconfig.Logger = log.New(os.Stdout, "[socks]", log.LstdFlags)
 	}
-	s, err := socks5.New(sconfig)
+	s, err := socks5.New(nil)
 	if err != nil {
 		log.Println("Failed to start socks server", err)
 
 		return err
 	}
-	sx := soxy.NewClient(s, config, logger)
-	return sx.DialAndListen(address)
+	sx := soxy.NewClient(config, logger)
+	return sx.DialAndServe(address, soxy.HandlerFunc(s.ServeConn))
 }

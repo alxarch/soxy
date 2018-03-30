@@ -5,19 +5,30 @@ import (
 	"log"
 	"net"
 
-	socks5 "github.com/alxarch/go-socks5"
 	"github.com/hashicorp/yamux"
 )
+
+// Handler is a connection handler
+type Handler interface {
+	HandleConn(conn net.Conn) error
+}
+
+// HandlerFunc is a closure Handler
+type HandlerFunc func(conn net.Conn) error
+
+// HandleConn implements Handler interface
+func (fn HandlerFunc) HandleConn(conn net.Conn) error {
+	return fn(conn)
+}
 
 // Client is a tunneling client to a socks server
 type Client struct {
 	config *yamux.Config
-	socks  *socks5.Server
 	logger *log.Logger
 }
 
-// NewClient creates a tunnel client to a socks server
-func NewClient(s *socks5.Server, config *yamux.Config, logger *log.Logger) *Client {
+// NewClient creates a tunnel client
+func NewClient(config *yamux.Config, logger *log.Logger) *Client {
 	if config == nil {
 		config = yamux.DefaultConfig()
 	}
@@ -25,15 +36,14 @@ func NewClient(s *socks5.Server, config *yamux.Config, logger *log.Logger) *Clie
 		logger = log.New(ioutil.Discard, "[soxy]", log.LstdFlags)
 	}
 	c := Client{
-		socks:  s,
 		config: config,
 		logger: logger,
 	}
 	return &c
 }
 
-// DialAndListen establishes a connection to a tunnel server and uses forwards incoming streams to a socks server
-func (c *Client) DialAndListen(address string) (err error) {
+// DialAndServe establishes a connection to a tunnel server and uses forwards incoming streams to a socks server
+func (c *Client) DialAndServe(address string, handler Handler) (err error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		c.logger.Println("Failed to dial", address, err.Error())
@@ -52,6 +62,6 @@ func (c *Client) DialAndListen(address string) (err error) {
 		}
 
 		c.logger.Println("New stream", stream.StreamID())
-		go c.socks.ServeConn(stream)
+		go handler.HandleConn(stream)
 	}
 }

@@ -29,11 +29,12 @@ func init() {
 
 func main() {
 	flag.Parse()
+
 	logger := log.New(os.Stdout, "[soxy]", log.LstdFlags)
 	s, err := socks5.New(sconfig)
 	if err != nil {
 		log.Fatal(err)
 	}
-	c := soxy.NewClient(s, config, logger)
-	logger.Fatal(c.DialAndListen(addr))
+	c := soxy.NewClient(config, logger)
+	logger.Fatal(c.DialAndServe(addr, soxy.HandlerFunc(s.ServeConn)))
 }
